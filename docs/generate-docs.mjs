@@ -3,14 +3,26 @@ import fs from 'fs';
 import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 
+function requiredEnv(name) {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} must be set for documentation generation.`);
+  return value;
+}
+
+const COMPOSIO_API_KEY = requiredEnv('COMPOSIO_API_KEY');
+const GOOGLE_SHEETS_ACCESS_TOKEN = requiredEnv('GOOGLE_SHEETS_ACCESS_TOKEN');
+const GOOGLE_SHEET_ID = requiredEnv('GOOGLE_SHEET_ID');
+
 const CREATED_AT = new Date().toUTCString();
 const UPDATED_AT = new Date().toUTCString();
 const REDIRECT_URL = '\n```\nhttps://backend.composio.dev/api/v1/auth-apps/add\n```\n\n';
 const HEADERS = {  
   headers: {    
     'Content-Type': 'application/json',    
-    Authorization: `Bearer ${process.env.COMPOSIO_API_KEY}`,    
-    Cookie: 'authToken=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJlZWVlNGEyYS01NzhjLTRlNGYtOWM4Ni1jYTQ5NWJlZjY1MjAiLCJlbWFpbCI6Imh1ZGl4dCswMUBnbWFpbC5jb20iLCJpYXQiOjE3MTE5ODI4NzAsImV4cCI6MTcxNDU3NDg3MH0.EJoKSHriyiZtyDpAobLyBWqvZZR4osfNVwvvK_1Km2A;',  
+    Authorization: `Bearer ${COMPOSIO_API_KEY}`,    
+    ...(process.env.COMPOSIO_AUTH_TOKEN
+      ? { Cookie: `authToken=${process.env.COMPOSIO_AUTH_TOKEN}` }
+      : {}),  
   },
 };
 
@@ -88,13 +100,13 @@ async function readSheetsData() {
   const oAuth2Client = new OAuth2Client();
   oAuth2Client.setCredentials({
     // Use your existing access token or refresh token here
-    access_token: 'ya29.a0Ad52N3_gP-tMnytE735o8344yMtBUpg-iZbscfLz1rGwyyjBWUPberA4O6aWlBZXLmvLVXGgm5F6--hRMPqd0793mu0GlFaixBgxTP9OIO3OsT1rRX9gdziKTv8cNZmdNBNDKt11TxLCX2xoomjOrRIO8nQmDrO34rFZaCgYKAaISARISFQHGX2MiOWJt4TiFIQ2ebi0aKxDt7Q0171', 
+    access_token: GOOGLE_SHEETS_ACCESS_TOKEN, 
     // or
     // refresh_token: 'YOUR_REFRESH_TOKEN',
   });
 
   const sheets = google.sheets({ version: 'v4', auth: oAuth2Client });
-  const spreadsheetId = '1Yy9JgGlw4qslDqLCw4XEvCVmaXkke0lnyrK4X4jbeGk'; // Replace with your Google Sheet ID
+  const spreadsheetId = GOOGLE_SHEET_ID;
   const range = 'Sheet2!A:Z'; // Replace with the range of your data
 
   const response = await sheets.spreadsheets.values.get({
@@ -193,4 +205,8 @@ async function main() {
   console.log(pathLinks.join('\n'));
 }
 
-main();
+main().catch(() => {
+  // Axios errors may contain authentication headers; never print the error object.
+  console.error('Documentation generation failed. Check configuration and provider access.');
+  process.exitCode = 1;
+});
